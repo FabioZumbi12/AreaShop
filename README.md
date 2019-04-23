@@ -14,10 +14,10 @@
 [►Frequently Asked Questions](https://github.com/NLthijs48/AreaShop/wiki/Frequently-Asked-Questions)&nbsp;&nbsp;
 [►Common errors](https://github.com/NLthijs48/AreaShop/wiki/Common-errors)<br/>
 **Support:**
-[►Request a feature, report a bug or ask support](https://github.com/NLthijs48/AreaShop/issues/new)&nbsp;&nbsp;
+[►Request a feature, report a bug or ask support](https://github.com/NLthijs48/AreaShop/issues/new/choose)&nbsp;&nbsp;
 [►Open issues](https://github.com/NLthijs48/AreaShop/issues)<br/>
 **Development:**
-[►Changelog](https://github.com/NLthijs48/AreaShop/wiki/Changelog)&nbsp;&nbsp;
+[►Changelog](https://github.com/NLthijs48/AreaShop/blob/master/changelog.md)&nbsp;&nbsp;
 [►Compiling](https://github.com/NLthijs48/AreaShop/wiki/Compiling-AreaShop)&nbsp;&nbsp;
 [►Modules/classes overview](https://github.com/NLthijs48/AreaShop/wiki/Modules,-packages-and-classes-overview)
 [►Javadocs](https://wiefferink.me/AreaShop/javadocs/)
@@ -36,7 +36,7 @@ AreaShop allows you selling and renting regions to players. It could be used to 
 * ![rented-sign](https://cloud.githubusercontent.com/assets/6951068/21939029/3844896a-d9be-11e6-8492-7a23ec71fce2.png)
 * Messages that can be clicked for more information and actions ([language](https://github.com/NLthijs48/AreaShop/wiki/Language-support) can be changed, as well as click/hover actions).
 * ![region-information-message](https://cloud.githubusercontent.com/assets/6951068/21939161/bff2fe3c-d9be-11e6-802f-4a0bce073c64.png)
-* Change the  of the plugin or use of of the already provided language files (check [here]
+* Change the  of the plugin or use of of the already provided language files (check [here](https://github.com/NLthijs48/AreaShop/tree/master/AreaShop/src/main/resources/lang))
 * Automatically restore the region to its original state when sold: [restore](https://github.com/NLthijs48/AreaShop/wiki/Region-blocks-save-restore) the region with schematics.
 * Change which [commands](https://github.com/NLthijs48/AreaShop/wiki/Commands-and-Permissions) players can use with [permissions](https://github.com/NLthijs48/AreaShop/wiki/Commands-and-Permissions).
 * Customize the plugin by changing the [config files](https://github.com/NLthijs48/AreaShop/wiki/The-config-system).
@@ -83,6 +83,6 @@ Help translating the plugin into different languages and to keep the translation
 
 ![Transifex-translation-progress](https://transifex.com/projects/p/areashop/resource/enyml/chart/image_png)
 
-[![Live-support-chat](https://user-images.githubusercontent.com/6951068/35104778-2a5e6e18-fc6a-11e7-8ffc-fd63adf3a24a.png)](https://99ms.gs/areashop)
+[![Discord-support-chat](https://discordapp.com/api/v6/guilds/342592311122853893/widget.png?style=banner3)](https://discord.gg/84kGMCQ)
 
 [![Donate through PayPal to support development](https://www.paypal.com/en_US/i/btn/btn_donate_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=VEECV88NG3L5C)

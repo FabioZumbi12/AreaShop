@@ -8,15 +8,25 @@
   <name>AreaShop Parent</name>
   <url>https://github.com/NLthijs48/AreaShop</url>
 
+  <licenses>
+    <license>
+      <name>GNU General Public License v3.0</name>
+      <url>https://www.gnu.org/licenses/gpl-3.0.en.html</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <issueManagement>
+    <url>https://github.com/NLthijs48/AreaShop/issues</url>
+    <system>GitHub Issues</system>
+  </issueManagement>
+
+  <ciManagement>
+    <system>Jenkins</system>
+    <url>http://jenkins.wiefferink.me/job/AreaShop</url>
+  </ciManagement>
+
   <repositories>
-    <repository>
-      <id>spigot-repo</id>
-      <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
-    </repository>
-    <repository>
-      <id>sk89q-repo-wg</id>
-      <url>http://maven.sk89q.com/artifactory/repo/</url>
-    </repository>
     <repository>
       <id>vault-repo</id>
       <url>http://nexus.hc.to/content/repositories/pub_releases</url>
@@ -36,16 +46,20 @@
     <maven.compiler.source>1.8</maven.compiler.source>
     <maven.compiler.target>1.8</maven.compiler.target>
     <build.number>#CUSTOM</build.number>
-    <bukkit.version>1.8-R0.1-SNAPSHOT</bukkit.version>
   </properties>
 
   <modules>
-    <module>WorldGuard 5</module>
-    <module>WorldGuard 6</module>
-    <module>WorldGuard 6_1_3</module>
-    <module>Interfaces</module>
-    <module>WorldEdit 5</module>
-    <module>WorldEdit 6</module>
+    <module>areashop-interface</module>
+    <module>areashop-worldguard-5</module>
+    <module>areashop-worldguard-6</module>
+    <module>areashop-worldguard-6_1_3</module>
+    <module>areashop-worldguard-7_beta_1</module>
+    <module>areashop-worldguard-7_beta_2</module>
+    <module>areashop-worldedit-5</module>
+    <module>areashop-worldedit-6</module>
+    <module>areashop-worldedit-7_beta_1</module>
+    <module>areashop-worldedit-7_beta_4</module>
+    <module>areashop-fastasyncworldedit</module>
     <module>AreaShop</module>
   </modules>
 

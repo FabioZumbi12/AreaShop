@@ -1,6 +1,6 @@
 package me.wiefferink.areashop.commands;
 
-import com.sk89q.worldedit.bukkit.selections.Selection;
+import me.wiefferink.areashop.interfaces.WorldEditSelection;
 import me.wiefferink.areashop.regions.GeneralRegion;
 import me.wiefferink.areashop.regions.RegionGroup;
 import me.wiefferink.areashop.tools.Utils;
@@ -47,13 +47,13 @@ public class GroupaddCommand extends CommandAreaShop {
 				return;
 			}
 			Player player = (Player)sender;
-			Selection selection = plugin.getWorldEdit().getSelection(player);
+			WorldEditSelection selection = plugin.getWorldEditHandler().getPlayerSelection(player);
 			if(selection == null) {
 				plugin.message(player, "cmd-noSelection");
 				return;
 			}
 			List<GeneralRegion> regions = Utils.getRegionsInSelection(selection);
-			if(regions.size() == 0) {
+			if(regions.isEmpty()) {
 				plugin.message(player, "cmd-noRegionsFound");
 				return;
 			}
@@ -66,10 +66,10 @@ public class GroupaddCommand extends CommandAreaShop {
 					regionsFailed.add(region);
 				}
 			}
-			if(regionsSuccess.size() != 0) {
+			if(!regionsSuccess.isEmpty()) {
 				plugin.message(player, "groupadd-weSuccess", group.getName(), Utils.combinedMessage(regionsSuccess, "region"));
 			}
-			if(regionsFailed.size() != 0) {
+			if(!regionsFailed.isEmpty()) {
 				plugin.message(player, "groupadd-weFailed", group.getName(), Utils.combinedMessage(regionsFailed, "region"));
 			}
 			// Update all regions, this does it in a task, updating them without lag

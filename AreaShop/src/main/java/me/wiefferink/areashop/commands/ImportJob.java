@@ -3,8 +3,8 @@ package me.wiefferink.areashop.commands;
 import com.google.common.base.Charsets;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
-import javafx.util.Pair;
 import me.wiefferink.areashop.AreaShop;
+import me.wiefferink.areashop.events.ask.AddingRegionEvent;
 import me.wiefferink.areashop.features.signs.RegionSign;
 import me.wiefferink.areashop.features.signs.SignsFeature;
 import me.wiefferink.areashop.regions.BuyRegion;
@@ -30,8 +30,8 @@ import java.util.UUID;
 
 public class ImportJob {
 
-	private AreaShop plugin;
-	private CommandSender sender;
+	private final AreaShop plugin;
+	private final CommandSender sender;
 
 	/**
 	 * Create and execute the import.
@@ -80,7 +80,7 @@ public class ImportJob {
 			messageNoPrefix("import-loadConfigFailed", regionForSaleConfigFile.getAbsolutePath());
 			regionForSaleConfig = new YamlConfiguration();
 		} else {
-			importRegionSettings(regionForSaleConfig, regionForSaleGroup.getSettings(), null);
+			importRegionSettings(regionForSaleConfig, regionForSaleGroup.getSettings(), null, false);
 			regionForSaleGroup.setSetting("priority", 0);
 		}
 
@@ -112,7 +112,7 @@ public class ImportJob {
 		// Import regions from each world
 		for(File worldFolder : worldFolders) {
 			// Skip files
-			if(!worldFolder.isDirectory()) {
+			if(!worldFolder.isDirectory() || worldFolder.isHidden()) {
 				continue;
 			}
 
@@ -126,7 +126,7 @@ public class ImportJob {
 			}
 
 			// Get the WorldGuard RegionManager
-			RegionManager regionManager = plugin.getWorldGuard().getRegionManager(world);
+			RegionManager regionManager = plugin.getRegionManager(world);
 			if(regionManager == null) {
 				messageNoPrefix("import-noRegionManger");
 				continue;
@@ -150,7 +150,7 @@ public class ImportJob {
 			} else {
 				// RegionGroup with all world settings
 				RegionGroup worldGroup = new RegionGroup(plugin, "RegionForSale-" + worldFolder.getName());
-				importRegionSettings(worldConfig, worldGroup.getSettings(), null);
+				importRegionSettings(worldConfig, worldGroup.getSettings(), null, false);
 				worldGroup.setSetting("priority", 1);
 				worldGroup.addWorld(worldFolder.getName());
 				plugin.getFileManager().addGroup(regionForSaleGroup);
@@ -186,7 +186,7 @@ public class ImportJob {
 
 					// Import parent region settings into a RegionGroup
 					RegionGroup parentRegionGroup = new RegionGroup(plugin, "RegionForSale-" + worldFolder.getName() + "-" + parentRegionName);
-					importRegionSettings(parentRegionSection, parentRegionGroup.getSettings(), null);
+					importRegionSettings(parentRegionSection, parentRegionGroup.getSettings(), null, false);
 					parentRegionGroup.setSetting("priority", 2 + parentRegionSection.getLong("info.priority", 0));
 					parentRegionGroup.saveRequired();
 
@@ -241,14 +241,17 @@ public class ImportJob {
 				GeneralRegion region;
 				if(rentable || (owner != null && !isBought)) {
 					region = new RentRegion(regionKey, world);
-					plugin.getFileManager().addRent((RentRegion)region);
 				} else {
 					region = new BuyRegion(regionKey, world);
-					plugin.getFileManager().addBuy((BuyRegion)region);
+				}
+				AddingRegionEvent event = plugin.getFileManager().addRegion(region);
+				if (event.isCancelled()) {
+					messageNoPrefix("general-cancelled", event.getReason());
+					continue;
 				}
 
 				// Import settings
-				importRegionSettings(regionSection, region.getConfig(), region);
+				importRegionSettings(regionSection, region.getConfig(), region, !buyable && !rentable);
 				region.getConfig().set("general.importedFrom", "RegionForSale");
 
 				// Get existing owners and members
@@ -312,8 +315,9 @@ public class ImportJob {
 	 * @param from RegionForSale config section that specifies region settings
 	 * @param to AreaShop config section that specifies region settings
 	 * @param region GeneralRegion to copy settings to, or null if doing generic settings
+	 * @param permanent Region cannot be rented or bought, disables some features
 	 */
-	private void importRegionSettings(ConfigurationSection from, ConfigurationSection to, GeneralRegion region) {
+	private void importRegionSettings(ConfigurationSection from, ConfigurationSection to, GeneralRegion region, boolean permanent) {
 		// Maximum rental time, TODO check if this is actually the same
 		if(from.isLong("permissions.max-rent-time")) {
 			to.set("rent.maxRentTime", minutesToString(from.getLong("permissions.max-rent-time")));
@@ -330,7 +334,7 @@ public class ImportJob {
 		String buyPrice = from.getString("economic-settings.cost-per-unit.buy");
 		String sellPrice = from.getString("economic-settings.cost-per-unit.selling-price");
 		// TODO: There is no easy way to import this, setup eventCommandsProfile?
-		String taxes = from.getString("economic-settings.cost-per-unit.taxes");
+		// String taxes = from.getString("economic-settings.cost-per-unit.taxes");
 
 		// Determine unit and add that to the price
 		String unitSuffix = "";
@@ -360,9 +364,15 @@ public class ImportJob {
 			}
 		}
 
+		// Apply permanent region settings
+		if(permanent) {
+			to.set("buy.resellDisabled", true);
+			to.set("buy.sellDisabled", true);
+			to.set("general.countForLimits", false);
+		}
+
 		// Set rented until
 		if(from.isLong("info.last-withdrawal")
-				&& region != null
 				&& region instanceof RentRegion) {
 			RentRegion rentRegion = (RentRegion)region;
 			long lastWithdrawal = from.getLong("info.last-withdrawal");
@@ -404,12 +414,22 @@ public class ImportJob {
 
 	}
 
-	private static List<Pair<Integer, String>> timeUnitLookup = new ArrayList<Pair<Integer, String>>() {
+	private static class TimeUnit {
+		public final long minutes;
+		public final String identifier;
+
+		TimeUnit(long minutes, String identifier) {
+			this.minutes = minutes;
+			this.identifier = identifier;
+		}
+	}
+
+	private static final List<TimeUnit> timeUnitLookup = new ArrayList<TimeUnit>() {
 		{
-			add(new Pair<>(60 * 24 * 30 * 12, "year"));
-			add(new Pair<>(60 * 24 * 30, "month"));
-			add(new Pair<>(60 * 24, "day"));
-			add(new Pair<>(60, "hour"));
+			add(new TimeUnit(60 * 24 * 30 * 12, "year"));
+			add(new TimeUnit(60 * 24 * 30, "month"));
+			add(new TimeUnit(60 * 24, "day"));
+			add(new TimeUnit(60, "hour"));
 		}
 	};
 
@@ -422,10 +442,10 @@ public class ImportJob {
 		// If the specified number of minutes can map nicely to a higher unit, use that one
 		String resultUnit = "minute";
 		long resultValue = minutes;
-		for(Pair<Integer, String> unit : timeUnitLookup) {
-			long result = minutes / unit.getKey();
-			if(resultValue * unit.getKey() == minutes) {
-				resultUnit = unit.getValue();
+		for(TimeUnit unit : timeUnitLookup) {
+			long result = minutes / unit.minutes;
+			if(resultValue * unit.minutes == minutes) {
+				resultUnit = unit.identifier;
 				resultValue = result;
 				break;
 			}

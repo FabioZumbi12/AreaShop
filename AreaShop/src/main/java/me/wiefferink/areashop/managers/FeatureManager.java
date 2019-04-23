@@ -1,6 +1,7 @@
 package me.wiefferink.areashop.managers;
 
 import me.wiefferink.areashop.AreaShop;
+import me.wiefferink.areashop.features.CommandsFeature;
 import me.wiefferink.areashop.features.DebugFeature;
 import me.wiefferink.areashop.features.FriendsFeature;
 import me.wiefferink.areashop.features.RegionFeature;
@@ -25,11 +26,12 @@ public class FeatureManager extends Manager {
 			SignsFeature.class,
 			FriendsFeature.class,
 			WorldGuardRegionFlagsFeature.class,
-			TeleportFeature.class
+			TeleportFeature.class,
+			CommandsFeature.class
 	));
 	// One instance of each feature, registered for event handling
-	private Set<RegionFeature> globalFeatures;
-	private Map<Class<? extends RegionFeature>, Constructor<? extends RegionFeature>> regionFeatureConstructors;
+	private final Set<RegionFeature> globalFeatures;
+	private final Map<Class<? extends RegionFeature>, Constructor<? extends RegionFeature>> regionFeatureConstructors;
 
 	/**
 	 * Constructor.
@@ -40,13 +42,11 @@ public class FeatureManager extends Manager {
 		for(Class<? extends RegionFeature> clazz : featureClasses) {
 			try {
 				Constructor<? extends RegionFeature> constructor = clazz.getConstructor();
-				try {
-					RegionFeature feature = constructor.newInstance();
-					feature.listen();
-					globalFeatures.add(feature);
-				} catch(InstantiationException | IllegalAccessException | InvocationTargetException | IllegalArgumentException e) {
-					AreaShop.error("Failed to instantiate global feature:", clazz, e);
-				}
+				RegionFeature feature = constructor.newInstance();
+				feature.listen();
+				globalFeatures.add(feature);
+			} catch(InstantiationException | IllegalAccessException | InvocationTargetException | IllegalArgumentException e) {
+				AreaShop.error("Failed to instantiate global feature:", clazz, e);
 			} catch(NoSuchMethodException e) {
 				// Feature does not have a global part
 			}
@@ -80,7 +80,7 @@ public class FeatureManager extends Manager {
 		try {
 			return regionFeatureConstructors.get(featureClazz).newInstance(region);
 		} catch(InstantiationException | InvocationTargetException | IllegalAccessException | IllegalArgumentException e) {
-			AreaShop.error("Failed to instanciate feature", featureClazz, "for region", region, e, e.getCause());
+			AreaShop.error("Failed to instantiate feature", featureClazz, "for region", region, e, e.getCause());
 		}
 		return null;
 	}

@@ -1,9 +1,9 @@
 package me.wiefferink.areashop.commands;
 
-import com.sk89q.worldedit.bukkit.selections.CuboidSelection;
 import me.wiefferink.areashop.features.signs.RegionSign;
 import me.wiefferink.areashop.features.signs.SignsFeature;
 import me.wiefferink.areashop.regions.GeneralRegion;
+import me.wiefferink.areashop.tools.Materials;
 import me.wiefferink.areashop.tools.Utils;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -52,7 +52,7 @@ public class AddsignCommand extends CommandAreaShop {
 				block = next;
 			}
 		}
-		if(block == null || !(block.getType() == Material.WALL_SIGN || block.getType() == Material.SIGN_POST)) {
+		if(block == null || !Materials.isSign(block.getType())) {
 			plugin.message(sender, "addsign-noSign");
 			return;
 		}
@@ -67,7 +67,7 @@ public class AddsignCommand extends CommandAreaShop {
 			}
 		} else {
 			// Get region by sign position
-			List<GeneralRegion> regions = Utils.getRegionsInSelection(new CuboidSelection(block.getWorld(), block.getLocation(), block.getLocation()));
+			List<GeneralRegion> regions = Utils.getImportantRegions(block.getLocation());
 			if(regions.isEmpty()) {
 				plugin.message(sender, "addsign-noRegions");
 				return;

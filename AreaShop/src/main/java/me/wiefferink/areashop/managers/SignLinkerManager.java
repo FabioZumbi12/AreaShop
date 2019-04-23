@@ -3,6 +3,7 @@ package me.wiefferink.areashop.managers;
 import me.wiefferink.areashop.features.signs.RegionSign;
 import me.wiefferink.areashop.features.signs.SignsFeature;
 import me.wiefferink.areashop.regions.GeneralRegion;
+import me.wiefferink.areashop.tools.Materials;
 import me.wiefferink.areashop.tools.Utils;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -28,7 +29,7 @@ import java.util.Set;
 import java.util.UUID;
 
 public class SignLinkerManager extends Manager implements Listener {
-	private Map<UUID, SignLinker> signLinkers;
+	private final Map<UUID, SignLinker> signLinkers;
 	private boolean eventsRegistered;
 
 	public SignLinkerManager() {
@@ -120,7 +121,7 @@ public class SignLinkerManager extends Manager implements Listener {
 						block = next;
 					}
 				}
-				if(block == null || !(block.getType() == Material.WALL_SIGN || block.getType() == Material.SIGN_POST)) {
+				if(block == null || !Materials.isSign(block.getType())) {
 					plugin.message(player, "linksigns-noSign");
 					return;
 				}
@@ -152,8 +153,8 @@ public class SignLinkerManager extends Manager implements Listener {
 		private boolean hasSign = false;
 		private boolean hasRegion = false;
 
-		public Player linker;
-		public String profile;
+		public final Player linker;
+		public final String profile;
 
 		public GeneralRegion region = null;
 

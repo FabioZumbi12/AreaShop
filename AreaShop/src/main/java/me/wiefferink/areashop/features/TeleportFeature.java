@@ -13,21 +13,14 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 public class TeleportFeature extends RegionFeature {
 
-	private static ArrayList<Material> canSpawnIn = new ArrayList<>(Arrays.asList(Material.WOOD_DOOR, Material.WOODEN_DOOR, Material.SIGN_POST, Material.WALL_SIGN, Material.STONE_PLATE, Material.IRON_DOOR_BLOCK, Material.WOOD_PLATE, Material.TRAP_DOOR, Material.REDSTONE_LAMP_OFF, Material.REDSTONE_LAMP_ON, Material.DRAGON_EGG, Material.GOLD_PLATE, Material.IRON_PLATE));
-	private static ArrayList<Material> cannotSpawnOn = new ArrayList<>(Arrays.asList(Material.PISTON_EXTENSION, Material.PISTON_MOVING_PIECE, Material.SIGN_POST, Material.WALL_SIGN, Material.STONE_PLATE, Material.IRON_DOOR_BLOCK, Material.WOOD_PLATE, Material.TRAP_DOOR, Material.REDSTONE_LAMP_OFF, Material.REDSTONE_LAMP_ON, Material.CACTUS, Material.IRON_FENCE, Material.FENCE_GATE, Material.THIN_GLASS, Material.NETHER_FENCE, Material.DRAGON_EGG, Material.GOLD_PLATE, Material.IRON_PLATE, Material.STAINED_GLASS_PANE));
-	private static ArrayList<Material> cannotSpawnBeside = new ArrayList<>(Arrays.asList(Material.LAVA, Material.STATIONARY_LAVA, Material.CACTUS));
-
 	public TeleportFeature() {
 	}
-
 
 	public TeleportFeature(GeneralRegion region) {
 		setRegion(region);
@@ -154,11 +147,11 @@ public class TeleportFeature extends RegionFeature {
 		int maxTries = plugin.getConfig().getInt("maximumTries");
 
 		// Tracking of which sides to continue the search
-		boolean done = isSafe(safeLocation) && ((blocksInRegion && insideRegion) || (!insideRegion));
+		boolean done = isSafe(safeLocation);
 		boolean northDone = false, eastDone = false, southDone = false, westDone = false, topDone = false, bottomDone = false;
 		boolean continueThisDirection;
 
-		while(((blocksInRegion && insideRegion) || (!insideRegion)) && !done) {
+		while((blocksInRegion || !insideRegion) && !done) {
 			blocksInRegion = false;
 
 			// North side
@@ -410,13 +403,13 @@ public class TeleportFeature extends RegionFeature {
 		Block above = head.getRelative(BlockFace.UP);
 
 		// Check the block at the feet and head of the player
-		if((feet.getType().isSolid() && !canSpawnIn.contains(feet.getType())) || feet.isLiquid()) {
+		if((feet.getType().isSolid() && !canSpawnIn(feet.getType())) || feet.isLiquid()) {
 			return false;
-		} else if((head.getType().isSolid() && !canSpawnIn.contains(head.getType())) || head.isLiquid()) {
+		} else if((head.getType().isSolid() && !canSpawnIn(head.getType())) || head.isLiquid()) {
 			return false;
-		} else if(!below.getType().isSolid() || cannotSpawnOn.contains(below.getType()) || below.isLiquid()) {
+		} else if(!below.getType().isSolid() || cannotSpawnOn(below.getType()) || below.isLiquid()) {
 			return false;
-		} else if(above.isLiquid() || cannotSpawnBeside.contains(above.getType())) {
+		} else if(above.isLiquid() || cannotSpawnBeside(above.getType())) {
 			return false;
 		}
 
@@ -437,11 +430,56 @@ public class TeleportFeature extends RegionFeature {
 
 		// Check the blocks around the player
 		for(Material material : around) {
-			if(cannotSpawnBeside.contains(material)) {
+			if(cannotSpawnBeside(material)) {
 				return false;
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * Check if a player can spawn in here.
+	 * @param material Material to check (assumed that this is at the feet or head level)
+	 * @return true when it is safe to spawn inside, otherwise false
+	 */
+	private static boolean canSpawnIn(Material material) {
+		String name = material.name();
+		return name.contains("DOOR")
+				|| name.contains("SIGN")
+				|| name.contains("PLATE") // Redstone plates
+				|| name.equals("DRAGON_EGG");
+	}
+
+	/**
+	 * Check if a player can spawn on here.
+	 * @param material Material to check (assumed that this is below the feet)
+	 * @return true when it is safe to spawn on top of, otherwise false
+	 */
+	private static boolean cannotSpawnOn(Material material) {
+		String name = material.name();
+		return name.equals("CACTUS")
+				|| name.contains("PISTON")
+				|| name.contains("SIGN")
+				|| name.contains("DOOR")
+				|| name.contains("PLATE")
+				|| name.contains("REDSTONE_LAMP")
+				|| name.contains("FENCE")
+				|| name.contains("GLASS_PANE") || name.contains("THIN_GLASS")
+				|| name.equals("DRAGON_EGG")
+				|| name.contains("MAGMA");
+	}
+
+	/**
+	 * Check if a player can spawn next to it.
+	 * @param material Material to check (assumed that this is somewhere around the player)
+	 * @return true when it is safe to spawn next to, otherwise false
+	 */
+	private static boolean cannotSpawnBeside(Material material) {
+		String name = material.name();
+		return name.contains("LAVA")
+				|| name.contains("CACTUS")
+				|| name.equals("FIRE")
+				|| name.contains("MAGMA");
 	}
 
 	/**
@@ -490,12 +528,14 @@ public class TeleportFeature extends RegionFeature {
 		// Calculate a default location
 		if(startLocation == null) {
 			// Set to block in the middle, y configured in the config
-			com.sk89q.worldedit.Vector middle = com.sk89q.worldedit.Vector.getMidpoint(worldguardRegion.getMaximumPoint(), worldguardRegion.getMinimumPoint());
+			Vector regionMin = AreaShop.getInstance().getWorldGuardHandler().getMinimumPoint(worldguardRegion);
+			Vector regionMax = AreaShop.getInstance().getWorldGuardHandler().getMaximumPoint(worldguardRegion);
+			Vector middle = regionMin.clone().midpoint(regionMax);
 			String configSetting = getRegion().getStringSetting("general.teleportLocationY");
 			if("bottom".equalsIgnoreCase(configSetting)) {
-				middle = middle.setY(worldguardRegion.getMinimumPoint().getBlockY());
+				middle = middle.setY(regionMin.getBlockY());
 			} else if("top".equalsIgnoreCase(configSetting)) {
-				middle = middle.setY(worldguardRegion.getMaximumPoint().getBlockY());
+				middle = middle.setY(regionMax.getBlockY());
 			} else if("middle".equalsIgnoreCase(configSetting)) {
 				middle = middle.setY(middle.getBlockY());
 			} else {

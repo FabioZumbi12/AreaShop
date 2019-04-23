@@ -11,12 +11,12 @@ import java.util.Set;
 // TODO consider switching to saving lowercase regions
 public class RegionGroup {
 
-	private AreaShop plugin;
-	private String name;
-	private Set<String> regions;
+	private final AreaShop plugin;
+	private final String name;
+	private final Set<String> regions;
 	private Set<String> autoRegions;
 	private boolean autoDirty;
-	private Set<String> worlds;
+	private final Set<String> worlds;
 
 	/**
 	 * Constructor, used when creating new groups or restoring them from groups.yml at server boot.
@@ -148,8 +148,8 @@ public class RegionGroup {
 	 */
 	public Set<GeneralRegion> getMemberRegions() {
 		Set<GeneralRegion> result = new HashSet<>();
-		for(String name : getMembers()) {
-			result.add(plugin.getFileManager().getRegion(name));
+		for(String playerName : getMembers()) {
+			result.add(plugin.getFileManager().getRegion(playerName));
 		}
 		return result;
 	}

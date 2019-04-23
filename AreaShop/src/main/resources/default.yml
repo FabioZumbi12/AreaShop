@@ -30,8 +30,10 @@ general:
   restrictedToRegion: false
   # The UUID of the landlord, this player will receive all money from rents/buys (but not reselling with '/as resell').
   landlord: ''
-  # Name of the landlord, if the landlord UUID setting is not provided then the name will be used instead
+  # Name of the landlord, if the landlord UUID setting is not provided then the name will be used instead.
   landlordName: ''
+  # Disable to prevent counting this region towards limits set by 'limitGroups' in config.yml.
+  countForLimits: true
 
   ##### Set the layout and functions of the signs.
   # The following sections can be added for performing certain commands when the sign is clicked:
@@ -241,3 +243,7 @@ buy:
   # Automatically sell the region after the specified number of minutes between the last login time of the buyer and the current time
   # Use times like '1 day' etc, or 'disabled' for never.
   inactiveTimeUntilSell: 'disabled'
+  # Selling is disabled for the region owner (players with areashop.sellown without areashop.sell)
+  sellDisabled: false
+  # Reselling is disabled for the region owner (players with areashop.resell without areashop.resellall)
+  resellDisabled: false

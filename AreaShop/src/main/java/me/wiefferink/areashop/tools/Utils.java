@@ -1,11 +1,9 @@
 package me.wiefferink.areashop.tools;
 
-import com.sk89q.worldedit.BlockVector;
-import com.sk89q.worldedit.bukkit.selections.CuboidSelection;
-import com.sk89q.worldedit.bukkit.selections.Selection;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import me.wiefferink.areashop.AreaShop;
+import me.wiefferink.areashop.interfaces.WorldEditSelection;
 import me.wiefferink.areashop.regions.BuyRegion;
 import me.wiefferink.areashop.regions.GeneralRegion;
 import me.wiefferink.areashop.regions.RentRegion;
@@ -22,6 +20,7 @@ import org.bukkit.configuration.Configuration;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
 
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
@@ -266,7 +265,7 @@ public class Utils {
 	public static String millisToHumanFormat(long milliseconds) {
 		long timeLeft = milliseconds + 500;
 		// To seconds
-		timeLeft = timeLeft / 1000;
+		timeLeft /= 1000;
 		if(timeLeft <= 0) {
 			return Message.fromKey("timeleft-ended").getPlain();
 		} else if(timeLeft == 1) {
@@ -275,27 +274,27 @@ public class Utils {
 			return Message.fromKey("timeleft-seconds").replacements(timeLeft).getPlain();
 		}
 		// To minutes
-		timeLeft = timeLeft / 60;
+		timeLeft /= 60;
 		if(timeLeft <= 120) {
 			return Message.fromKey("timeleft-minutes").replacements(timeLeft).getPlain();
 		}
 		// To hours
-		timeLeft = timeLeft / 60;
+		timeLeft /= 60;
 		if(timeLeft <= 48) {
 			return Message.fromKey("timeleft-hours").replacements(timeLeft).getPlain();
 		}
 		// To days
-		timeLeft = timeLeft / 24;
+		timeLeft /= 24;
 		if(timeLeft <= 60) {
 			return Message.fromKey("timeleft-days").replacements(timeLeft).getPlain();
 		}
 		// To months
-		timeLeft = timeLeft / 30;
+		timeLeft /= 30;
 		if(timeLeft <= 24) {
 			return Message.fromKey("timeleft-months").replacements(timeLeft).getPlain();
 		}
 		// To years
-		timeLeft = timeLeft / 12;
+		timeLeft /= 12;
 		return Message.fromKey("timeleft-years").replacements(timeLeft).getPlain();
 	}
 
@@ -319,7 +318,7 @@ public class Utils {
 	 * @param selection The selection to check
 	 * @return A list with all the AreaShop regions intersecting with the selection
 	 */
-	public static List<GeneralRegion> getRegionsInSelection(Selection selection) {
+	public static List<GeneralRegion> getRegionsInSelection(WorldEditSelection selection) {
 		ArrayList<GeneralRegion> result = new ArrayList<>();
 		for(ProtectedRegion region : getWorldEditRegionsInSelection(selection)) {
 			GeneralRegion asRegion = AreaShop.getInstance().getFileManager().getRegion(region.getId());
@@ -336,8 +335,7 @@ public class Utils {
 	 * @return A list with all the AreaShop regions that contain the location
 	 */
 	public static List<GeneralRegion> getRegions(Location location) {
-		Selection selection = new CuboidSelection(location.getWorld(), location, location);
-		return getRegionsInSelection(selection);
+		return getRegionsInSelection(new WorldEditSelection(location.getWorld(), location, location));
 	}
 
 	/**
@@ -345,16 +343,16 @@ public class Utils {
 	 * @param selection The selection to check
 	 * @return A list with all the WorldGuard regions intersecting with the selection
 	 */
-	public static List<ProtectedRegion> getWorldEditRegionsInSelection(Selection selection) {
+	public static List<ProtectedRegion> getWorldEditRegionsInSelection(WorldEditSelection selection) {
 		// Get all regions inside or intersecting with the WorldEdit selection of the player
 		World world = selection.getWorld();
-		RegionManager regionManager = AreaShop.getInstance().getWorldGuard().getRegionManager(world);
+		RegionManager regionManager = AreaShop.getInstance().getRegionManager(world);
 		ArrayList<ProtectedRegion> result = new ArrayList<>();
-		Location selectionMin = selection.getMinimumPoint();
-		Location selectionMax = selection.getMaximumPoint();
+		Location selectionMin = selection.getMinimumLocation();
+		Location selectionMax = selection.getMaximumLocation();
 		for(ProtectedRegion region : regionManager.getRegions().values()) {
-			BlockVector regionMin = region.getMinimumPoint();
-			BlockVector regionMax = region.getMaximumPoint();
+			Vector regionMin = AreaShop.getInstance().getWorldGuardHandler().getMinimumPoint(region);
+			Vector regionMax = AreaShop.getInstance().getWorldGuardHandler().getMaximumPoint(region);
 			if(
 					(      // x part, resolves to true if the selection and region overlap anywhere on the x-axis
 							(regionMin.getBlockX() <= selectionMax.getBlockX() && regionMin.getBlockX() >= selectionMin.getBlockX())
@@ -564,7 +562,10 @@ public class Utils {
 			}
 		}
 		result = result.replace(".", config.getString("decimalMark"));
-		return before + result + after;
+		Message resultMessage = Message.fromString(result);
+		resultMessage.prepend(before);
+		resultMessage.append(after);
+		return resultMessage.getSingle();
 	}
 
 
@@ -580,7 +581,7 @@ public class Utils {
 		}
 
 		// Check if the suffix is one of these values
-		String suffix = time.substring(time.indexOf(' ') + 1, time.length());
+		String suffix = time.substring(time.indexOf(' ') + 1);
 		if(!identifiers.contains(suffix)) {
 			return false;
 		}
@@ -598,7 +599,7 @@ public class Utils {
 	public static long durationStringToLong(String duration) {
 		if(duration == null) {
 			return 0;
-		} else if(duration.equalsIgnoreCase("disabled") || duration.equalsIgnoreCase("unlimited")) {
+		} else if(duration.equalsIgnoreCase("disabled") || duration.equalsIgnoreCase("unlimited") || duration.isEmpty()) {
 			return -1;
 		} else if(duration.indexOf(' ') == -1) {
 			return 0;
@@ -606,7 +607,7 @@ public class Utils {
 		Calendar calendar = Calendar.getInstance();
 		calendar.setTimeInMillis(0);
 
-		String durationString = duration.substring(duration.indexOf(' ') + 1, duration.length());
+		String durationString = duration.substring(duration.indexOf(' ') + 1);
 		int durationInt = 0;
 		try {
 			durationInt = Integer.parseInt(duration.substring(0, duration.indexOf(' ')));
@@ -646,7 +647,7 @@ public class Utils {
 		if(config.isLong(path) || config.isInt(path)) {
 			long setting = config.getLong(path);
 			if(setting != -1) {
-				setting = setting * 1000;
+				setting *= 1000;
 			}
 			return setting;
 		} else {
@@ -664,7 +665,7 @@ public class Utils {
 		if(config.isLong(path) || config.isInt(path)) {
 			long setting = config.getLong(path);
 			if(setting != -1) {
-				setting = setting * 60 * 1000;
+				setting *= 60 * 1000;
 			}
 			return setting;
 		} else {
@@ -682,7 +683,7 @@ public class Utils {
 		try {
 			number = Long.parseLong(input);
 			if(number != -1) {
-				number = number * 60 * 1000;
+				number *= 60 * 1000;
 			}
 			return number;
 		} catch(NumberFormatException e) {
@@ -700,7 +701,7 @@ public class Utils {
 		try {
 			number = Long.parseLong(input);
 			if(number != -1) {
-				number = number * 1000;
+				number *= 1000;
 			}
 			return number;
 		} catch(NumberFormatException e) {

@@ -1,21 +1,22 @@
 package me.wiefferink.areashop.commands;
 
-import com.sk89q.worldedit.BlockVector;
-import com.sk89q.worldedit.Vector;
-import com.sk89q.worldedit.bukkit.selections.Selection;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion;
 import me.wiefferink.areashop.AreaShop;
+import me.wiefferink.areashop.events.ask.AddingRegionEvent;
+import me.wiefferink.areashop.interfaces.WorldEditSelection;
 import me.wiefferink.areashop.regions.BuyRegion;
 import me.wiefferink.areashop.regions.GeneralRegion;
 import me.wiefferink.areashop.regions.RegionGroup;
 import me.wiefferink.areashop.regions.RentRegion;
 import me.wiefferink.areashop.tools.Utils;
 import me.wiefferink.interactivemessenger.processing.Message;
+import org.bukkit.Location;
 import org.bukkit.block.BlockFace;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -78,7 +79,7 @@ public class StackCommand extends CommandAreaShop {
 			return;
 		}
 		// Get WorldEdit selection
-		final Selection selection = plugin.getWorldEdit().getSelection(player);
+		final WorldEditSelection selection = plugin.getWorldEditHandler().getPlayerSelection(player);
 		if(selection == null) {
 			plugin.message(player, "stack-noSelection");
 			return;
@@ -103,7 +104,7 @@ public class StackCommand extends CommandAreaShop {
 			plugin.message(player, "stack-unclearDirection", facing.toString().toLowerCase().replace('_', '-'));
 			return;
 		}
-		Vector shift = new BlockVector(0, 0, 0);
+		Vector shift = new Vector(0, 0, 0);
 		if(facing == BlockFace.SOUTH) {
 			shift = shift.setZ(-selection.getLength() - gap);
 		} else if(facing == BlockFace.WEST) {
@@ -139,9 +140,14 @@ public class StackCommand extends CommandAreaShop {
 		}
 		plugin.message(player, "stack-accepted", amount, type, gap, nameTemplate, groupsMessage);
 		plugin.message(player, "stack-addStart", amount, regionsPerTick * 20);
+
+		Location minimumLocation = selection.getMinimumLocation();
+		Vector minimumVector = new Vector(minimumLocation.getX(), minimumLocation.getY(), minimumLocation.getZ());
+		Location maximumLocation = selection.getMaximumLocation();
+		Vector maximumVector = new Vector(maximumLocation.getX(), maximumLocation.getY(), maximumLocation.getZ());
 		new BukkitRunnable() {
 			private int current = -1;
-			private RegionManager manager = AreaShop.getInstance().getWorldGuard().getRegionManager(selection.getWorld());
+			private final RegionManager manager = AreaShop.getInstance().getRegionManager(selection.getWorld());
 			private int counter = 1;
 			private int tooLow = 0;
 			private int tooHigh = 0;
@@ -152,33 +158,16 @@ public class StackCommand extends CommandAreaShop {
 					current++;
 					if(current < amount) {
 						// Create the region name
-						String counterName = counter + "";
-						int minimumLength = plugin.getConfig().getInt("stackRegionNumberLength");
-						while(counterName.length() < minimumLength) {
-							counterName = "0" + counterName;
-						}
-						String regionName;
-						if(nameTemplate.contains("#")) {
-							regionName = nameTemplate.replace("#", counterName);
-						} else {
-							regionName = nameTemplate + counterName;
-						}
+						String regionName = countToName(nameTemplate, counter);
 						while(manager.getRegion(regionName) != null || AreaShop.getInstance().getFileManager().getRegion(regionName) != null) {
 							counter++;
-							counterName = counter + "";
-							minimumLength = plugin.getConfig().getInt("stackRegionNumberLength");
-							while(counterName.length() < minimumLength) {
-								counterName = "0" + counterName;
-							}
-							if(nameTemplate.contains("#")) {
-								regionName = nameTemplate.replace("#", counterName);
-							} else {
-								regionName = nameTemplate + counterName;
-							}
+							regionName = countToName(nameTemplate, counter);
 						}
+
 						// Add the region to WorldGuard (at startposition shifted by the number of this region times the blocks it should shift)
-						BlockVector minimum = new BlockVector(selection.getNativeMinimumPoint().add(finalShift.multiply(current)));
-						BlockVector maximum = new BlockVector(selection.getNativeMaximumPoint().add(finalShift.multiply(current)));
+						Vector minimum = minimumVector.clone().add(finalShift.clone().multiply(current));
+						Vector maximum = maximumVector.clone().add(finalShift.clone().multiply(current));
+
 						// Check for out of bounds
 						if(minimum.getBlockY() < 0) {
 							tooLow++;
@@ -187,30 +176,28 @@ public class StackCommand extends CommandAreaShop {
 							tooHigh++;
 							continue;
 						}
-						ProtectedCuboidRegion region = new ProtectedCuboidRegion(regionName, minimum, maximum);
+						ProtectedCuboidRegion region = plugin.getWorldGuardHandler().createCuboidRegion(regionName, minimum,maximum);
 						manager.addRegion(region);
+
 						// Add the region to AreaShop
+						GeneralRegion newRegion;
 						if(rentRegions) {
-							RentRegion rent = new RentRegion(regionName, selection.getWorld());
-							if(finalGroup != null) {
-								finalGroup.addMember(rent);
-							}
-							rent.runEventCommands(GeneralRegion.RegionEvent.CREATED, true);
-							plugin.getFileManager().addRent(rent);
-							rent.handleSchematicEvent(GeneralRegion.RegionEvent.CREATED);
-							rent.runEventCommands(GeneralRegion.RegionEvent.CREATED, false);
-							rent.update();
+							newRegion = new RentRegion(regionName, selection.getWorld());
+
 						} else {
-							BuyRegion buy = new BuyRegion(regionName, selection.getWorld());
-							if(finalGroup != null) {
-								finalGroup.addMember(buy);
-							}
-							buy.runEventCommands(GeneralRegion.RegionEvent.CREATED, true);
-							plugin.getFileManager().addBuy(buy);
-							buy.handleSchematicEvent(GeneralRegion.RegionEvent.CREATED);
-							buy.runEventCommands(GeneralRegion.RegionEvent.CREATED, false);
-							buy.update();
+							newRegion = new BuyRegion(regionName, selection.getWorld());
 						}
+
+						if(finalGroup != null) {
+							finalGroup.addMember(newRegion);
+						}
+						AddingRegionEvent event = plugin.getFileManager().addRegion(newRegion);
+						if (event.isCancelled()) {
+							plugin.message(player, "general-cancelled", event.getReason());
+							continue;
+						}
+						newRegion.handleSchematicEvent(GeneralRegion.RegionEvent.CREATED);
+						newRegion.update();
 					}
 				}
 				if(current >= amount) {
@@ -229,6 +216,26 @@ public class StackCommand extends CommandAreaShop {
 				}
 			}
 		}.runTaskTimer(plugin, 1, 1);
+	}
+
+	/**
+	 * Build a name from a count, with the right length.
+	 * @param template Template to put the name in (# to put the count there, otherwise count is appended)
+	 * @param count Number to use
+	 * @return name with prepended 0's
+	 */
+	private String countToName(String template, int count) {
+		StringBuilder counterName =  new StringBuilder().append(count);
+		int minimumLength = plugin.getConfig().getInt("stackRegionNumberLength");
+		while(counterName.length() < minimumLength) {
+			counterName.insert(0, "0");
+		}
+
+		if(template.contains("#")) {
+			return template.replace("#", counterName);
+		} else {
+			return template + counterName;
+		}
 	}
 
 	@Override

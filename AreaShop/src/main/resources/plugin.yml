@@ -3,7 +3,7 @@ main: me.wiefferink.areashop.AreaShop
 version: "${project.version}${build.number}"
 description: "Selling and renting WorldGuard regions to your players, highly configurable."
 depend: [Vault, WorldGuard, WorldEdit]
-softdepend: [Multiverse-Core]
+softdepend: [Multiverse-Core, FastAsyncWorldEdit]
 author: NLThijs48
 website: https://github.com/NLthijs48/AreaShop
 commands:
@@ -13,6 +13,7 @@ commands:
     aliases: [as]
 awareness:
   - !@UTF8
+api-version: 1.13
 permissions:
   areashop.*:
     description: Give access to all commands of AreaShop
@@ -203,7 +204,7 @@ permissions:
     default: op
   areashop.limits.default:
     description: Assign limits as set in the 'default' group in the 'limitGroups' section of the config
-    default: not op
+    default: true
   areashop.limitbypass:
     description: Bypass the limits for renting/buying regions (how many you can have at the same time)
     default: op

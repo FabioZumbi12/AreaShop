@@ -42,7 +42,7 @@ public class WorldGuardRegionFlagsFeature extends RegionFeature {
 		// Region flags for all states
 		ConfigurationSection allFlags = flagProfileSection.getConfigurationSection("ALL");
 		if(allFlags != null) {
-			result = result && updateRegionFlags(region, allFlags);
+			result = updateRegionFlags(region, allFlags);
 		}
 
 		// Region flags for the current state
@@ -52,9 +52,8 @@ public class WorldGuardRegionFlagsFeature extends RegionFeature {
 		if(stateFlags == null && region.getState() == GeneralRegion.RegionState.RESELL) {
 			stateFlags = flagProfileSection.getConfigurationSection("resale");
 		}
-
 		if(stateFlags != null) {
-			result = result && updateRegionFlags(region, stateFlags);
+			result &= updateRegionFlags(region, stateFlags);
 		}
 
 		return result;
@@ -103,10 +102,10 @@ public class WorldGuardRegionFlagsFeature extends RegionFeature {
 					result = false;
 				}
 			} else if(flagName.equalsIgnoreCase("parent")) {
-				if(region.getWorld() == null || worldGuard.getRegionManager(region.getWorld()) == null) {
+				if(region.getWorld() == null || plugin.getRegionManager(region.getWorld()) == null) {
 					continue;
 				}
-				ProtectedRegion parentRegion = worldGuard.getRegionManager(region.getWorld()).getRegion(value);
+				ProtectedRegion parentRegion = plugin.getRegionManager(region.getWorld()).getRegion(value);
 				if(parentRegion != null) {
 					if(!parentRegion.equals(worldguardRegion.getParent())) {
 						try {
@@ -181,8 +180,9 @@ public class WorldGuardRegionFlagsFeature extends RegionFeature {
 			}
 		}
 		// Indicate that the regions needs to be saved
-		// TODO do we still need this? maybe only for old WorldGuard?
-		plugin.getFileManager().saveIsRequiredForRegionWorld(region.getWorldName());
+		if(worldGuard.getDescription().getVersion().startsWith("5.")) {
+			plugin.getFileManager().saveIsRequiredForRegionWorld(region.getWorldName());
+		}
 		return result;
 	}
 

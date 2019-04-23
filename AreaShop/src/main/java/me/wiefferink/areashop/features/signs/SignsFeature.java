@@ -1,15 +1,16 @@
 package me.wiefferink.areashop.features.signs;
 
-import com.sk89q.worldedit.bukkit.selections.CuboidSelection;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import me.wiefferink.areashop.AreaShop;
+import me.wiefferink.areashop.events.ask.AddingRegionEvent;
 import me.wiefferink.areashop.events.notify.UpdateRegionEvent;
 import me.wiefferink.areashop.features.RegionFeature;
 import me.wiefferink.areashop.managers.FileManager;
 import me.wiefferink.areashop.regions.BuyRegion;
 import me.wiefferink.areashop.regions.GeneralRegion;
 import me.wiefferink.areashop.regions.RentRegion;
+import me.wiefferink.areashop.tools.Materials;
 import me.wiefferink.areashop.tools.Utils;
 import me.wiefferink.bukkitdo.Do;
 import org.bukkit.Chunk;
@@ -27,7 +28,7 @@ import org.bukkit.event.block.BlockPhysicsEvent;
 import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
-import org.bukkit.event.world.ChunkUnloadEvent;
+import org.bukkit.material.Sign;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,8 +39,8 @@ import java.util.Set;
 
 public class SignsFeature extends RegionFeature {
 
-	private static Map<String, RegionSign> allSigns = Collections.synchronizedMap(new HashMap<>());
-	private static Map<String, List<RegionSign>> signsByChunk = Collections.synchronizedMap(new HashMap<>());
+	private static final Map<String, RegionSign> allSigns = Collections.synchronizedMap(new HashMap<>());
+	private static final Map<String, List<RegionSign>> signsByChunk = Collections.synchronizedMap(new HashMap<>());
 
 	private Map<String, RegionSign> signs;
 
@@ -90,7 +91,7 @@ public class SignsFeature extends RegionFeature {
 		}
 		Block block = event.getBlock();
 		// Check if it is a sign
-		if(block.getType() == Material.WALL_SIGN || block.getType() == Material.SIGN_POST) {
+		if(Materials.isSign(block.getType())) {
 			// Check if the rent sign is really the same as a saved rent
 			RegionSign regionSign = SignsFeature.getSignByLocation(block.getLocation());
 			if(regionSign == null) {
@@ -109,24 +110,37 @@ public class SignsFeature extends RegionFeature {
 
 	@EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
 	public void onIndirectSignBreak(BlockPhysicsEvent event) {
-		if(event.getBlock().getType() == Material.SIGN_POST || event.getBlock().getType() == Material.WALL_SIGN) {
-			// Check if the rent sign is really the same as a saved rent
-			if(SignsFeature.getSignByLocation(event.getBlock().getLocation()) != null) {
-				// Cancel the sign breaking, will create a floating sign but at least it is not disconnected/gone
-				event.setCancelled(true);
-			}
-		}
-	}
-
-	@EventHandler(priority = EventPriority.HIGH)
-	public void onSignClick(PlayerInteractEvent event) {
-		if(event.isCancelled()) {
+		// Check if the block is a sign
+		if(!Materials.isSign(event.getBlock().getType())) {
 			return;
 		}
+
+		// Check if still attached to a block
+		Block b = event.getBlock();
+		Sign s = (Sign) b.getState().getData();
+		Block attachedBlock = b.getRelative(s.getAttachedFace());
+		if (attachedBlock.getType() != Material.AIR) {
+			return;
+		}
+
+		// Check if the rent sign is really the same as a saved rent
+		RegionSign regionSign = SignsFeature.getSignByLocation(event.getBlock().getLocation());
+		if(regionSign == null) {
+			return;
+		}
+
+		// Remove the sign so that it does not fall on the floor as an item (next region update will place it back)
+		AreaShop.debug("onIndirectSignBreak: Removed block of sign for", regionSign.getRegion().getName(), "at", regionSign.getStringLocation());
+		event.getBlock().setType(Material.AIR);
+		event.setCancelled(true);
+	}
+
+	@EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+	public void onSignClick(PlayerInteractEvent event) {
 		Block block = event.getClickedBlock();
 		// Check for clicking a sign and rightclicking
 		if((event.getAction() == Action.RIGHT_CLICK_BLOCK || event.getAction() == Action.LEFT_CLICK_BLOCK)
-				&& (block.getType() == Material.SIGN_POST || block.getType() == Material.WALL_SIGN)) {
+				&& Materials.isSign(block.getType())) {
 			// Check if the rent sign is really the same as a saved rent
 			RegionSign regionSign = SignsFeature.getSignByLocation(block.getLocation());
 			if(regionSign == null) {
@@ -178,10 +192,10 @@ public class SignsFeature extends RegionFeature {
 			String fourthLine = event.getLine(3);
 
 			// Get the regionManager for accessing regions
-			RegionManager regionManager = plugin.getWorldGuard().getRegionManager(event.getPlayer().getWorld());
+			RegionManager regionManager = plugin.getRegionManager(event.getPlayer().getWorld());
 
 			// If the secondLine does not contain a name try to find the region by location
-			if(secondLine == null || secondLine.length() == 0) {
+			if(secondLine == null || secondLine.isEmpty()) {
 				Set<ProtectedRegion> regions = plugin.getWorldGuardHandler().getApplicableRegionsSet(event.getBlock().getLocation());
 				if(regions != null) {
 					boolean first = true;
@@ -211,10 +225,10 @@ public class SignsFeature extends RegionFeature {
 				}
 			}
 
-			boolean priceSet = fourthLine != null && fourthLine.length() != 0;
-			boolean durationSet = thirdLine != null && thirdLine.length() != 0;
+			boolean priceSet = fourthLine != null && !fourthLine.isEmpty();
+			boolean durationSet = thirdLine != null && !thirdLine.isEmpty();
 			// check if all the lines are correct
-			if(secondLine == null || secondLine.length() == 0) {
+			if(secondLine == null || secondLine.isEmpty()) {
 				plugin.message(player, "setup-noRegion");
 				return;
 			}
@@ -224,14 +238,16 @@ public class SignsFeature extends RegionFeature {
 				return;
 			}
 
-			FileManager.AddResult addResult = plugin.getFileManager().checkRegionAdd(player, regionManager.getRegion(secondLine), GeneralRegion.RegionType.RENT);
+			FileManager.AddResult addResult = plugin.getFileManager().checkRegionAdd(player, regionManager.getRegion(secondLine), event.getPlayer().getWorld(), GeneralRegion.RegionType.RENT);
 			if(addResult == FileManager.AddResult.BLACKLISTED) {
 				plugin.message(player, "setup-blacklisted", secondLine);
 			} else if(addResult == FileManager.AddResult.ALREADYADDED) {
 				plugin.message(player, "setup-alreadyRentSign");
+			} else if(addResult == FileManager.AddResult.ALREADYADDEDOTHERWORLD) {
+				plugin.message(player, "setup-alreadyOtherWorld");
 			} else if(addResult == FileManager.AddResult.NOPERMISSION) {
 				plugin.message(player, "setup-noPermission", secondLine);
-			} else if(thirdLine != null && thirdLine.length() != 0 && !Utils.checkTimeFormat(thirdLine)) {
+			} else if(thirdLine != null && !thirdLine.isEmpty() && !Utils.checkTimeFormat(thirdLine)) {
 				plugin.message(player, "setup-wrongDuration");
 			} else {
 				double price = 0.0;
@@ -265,16 +281,16 @@ public class SignsFeature extends RegionFeature {
 				org.bukkit.material.Sign sign = (org.bukkit.material.Sign)event.getBlock().getState().getData();
 				rent.getSignsFeature().addSign(event.getBlock().getLocation(), event.getBlock().getType(), sign.getFacing(), null);
 
-				// Run commands
-				rent.runEventCommands(GeneralRegion.RegionEvent.CREATED, true);
+				AddingRegionEvent addingRegionEvent = plugin.getFileManager().addRegion(rent);
+				if (addingRegionEvent.isCancelled()) {
+					plugin.message(player, "general-cancelled", addingRegionEvent.getReason());
+					return;
+				}
 
-				plugin.getFileManager().addRent(rent);
 				rent.handleSchematicEvent(GeneralRegion.RegionEvent.CREATED);
 				plugin.message(player, "setup-rentSuccess", rent);
 				// Update the region after the event has written its lines
 				Do.sync(rent::update);
-				// Run commands
-				rent.runEventCommands(GeneralRegion.RegionEvent.CREATED, false);
 			}
 		} else if(event.getLine(0).contains(plugin.getConfig().getString("signTags.buy"))) {
 			// Check for permission
@@ -288,10 +304,10 @@ public class SignsFeature extends RegionFeature {
 			String thirdLine = event.getLine(2);
 
 			// Get the regionManager for accessing regions
-			RegionManager regionManager = plugin.getWorldGuard().getRegionManager(event.getPlayer().getWorld());
+			RegionManager regionManager = plugin.getRegionManager(event.getPlayer().getWorld());
 
 			// If the secondLine does not contain a name try to find the region by location
-			if(secondLine == null || secondLine.length() == 0) {
+			if(secondLine == null || secondLine.isEmpty()) {
 				Set<ProtectedRegion> regions = plugin.getWorldGuardHandler().getApplicableRegionsSet(event.getBlock().getLocation());
 				if(regions != null) {
 					boolean first = true;
@@ -321,9 +337,9 @@ public class SignsFeature extends RegionFeature {
 				}
 			}
 
-			boolean priceSet = thirdLine != null && thirdLine.length() != 0;
+			boolean priceSet = thirdLine != null && !thirdLine.isEmpty();
 			// Check if all the lines are correct
-			if(secondLine == null || secondLine.length() == 0) {
+			if(secondLine == null || secondLine.isEmpty()) {
 				plugin.message(player, "setup-noRegion");
 				return;
 			}
@@ -332,11 +348,13 @@ public class SignsFeature extends RegionFeature {
 				plugin.message(player, "cmd-noRegion", secondLine);
 				return;
 			}
-			FileManager.AddResult addResult = plugin.getFileManager().checkRegionAdd(player, region, GeneralRegion.RegionType.BUY);
+			FileManager.AddResult addResult = plugin.getFileManager().checkRegionAdd(player, region, event.getPlayer().getWorld(), GeneralRegion.RegionType.BUY);
 			if(addResult == FileManager.AddResult.BLACKLISTED) {
 				plugin.message(player, "setup-blacklisted", secondLine);
 			} else if(addResult == FileManager.AddResult.ALREADYADDED) {
 				plugin.message(player, "setup-alreadyRentSign");
+			} else if(addResult == FileManager.AddResult.ALREADYADDEDOTHERWORLD) {
+				plugin.message(player, "setup-alreadyOtherWorld");
 			} else if(addResult == FileManager.AddResult.NOPERMISSION) {
 				plugin.message(player, "setup-noPermission", secondLine);
 			} else {
@@ -367,17 +385,17 @@ public class SignsFeature extends RegionFeature {
 				}
 				org.bukkit.material.Sign sign = (org.bukkit.material.Sign)event.getBlock().getState().getData();
 				buy.getSignsFeature().addSign(event.getBlock().getLocation(), event.getBlock().getType(), sign.getFacing(), null);
-				// Run commands
-				buy.runEventCommands(GeneralRegion.RegionEvent.CREATED, true);
 
-				plugin.getFileManager().addBuy(buy);
+				AddingRegionEvent addingRegionEvent = plugin.getFileManager().addRegion(buy);
+				if (addingRegionEvent.isCancelled()) {
+					plugin.message(player, "general-cancelled", addingRegionEvent.getReason());
+					return;
+				}
+
 				buy.handleSchematicEvent(GeneralRegion.RegionEvent.CREATED);
 				plugin.message(player, "setup-buySuccess", buy);
 				// Update the region after the event has written its lines
 				Do.sync(buy::update);
-
-				// Run commands
-				buy.runEventCommands(GeneralRegion.RegionEvent.CREATED, false);
 			}
 		} else if(event.getLine(0).contains(plugin.getConfig().getString("signTags.add"))) {
 			// Check for permission
@@ -391,7 +409,7 @@ public class SignsFeature extends RegionFeature {
 			String thirdLine = event.getLine(2);
 
 			GeneralRegion region;
-			if(secondLine != null && secondLine.length() != 0) {
+			if(secondLine != null && !secondLine.isEmpty()) {
 				// Get region by secondLine of the sign
 				region = plugin.getFileManager().getRegion(secondLine);
 				if(region == null) {
@@ -400,7 +418,7 @@ public class SignsFeature extends RegionFeature {
 				}
 			} else {
 				// Get region by sign position
-				List<GeneralRegion> regions = Utils.getRegionsInSelection(new CuboidSelection(event.getBlock().getWorld(), event.getBlock().getLocation(), event.getBlock().getLocation()));
+				List<GeneralRegion> regions = Utils.getImportantRegions(event.getBlock().getLocation());
 				if(regions.isEmpty()) {
 					plugin.message(player, "addsign-noRegions");
 					return;
@@ -411,7 +429,7 @@ public class SignsFeature extends RegionFeature {
 				region = regions.get(0);
 			}
 			org.bukkit.material.Sign sign = (org.bukkit.material.Sign)event.getBlock().getState().getData();
-			if(thirdLine == null || thirdLine.length() == 0) {
+			if(thirdLine == null || thirdLine.isEmpty()) {
 				region.getSignsFeature().addSign(event.getBlock().getLocation(), event.getBlock().getType(), sign.getFacing(), null);
 				plugin.message(player, "addsign-success", region);
 			} else {
@@ -492,11 +510,6 @@ public class SignsFeature extends RegionFeature {
 		Do.forAll(chunkSigns, RegionSign::update);
 	}
 
-	@EventHandler(priority = EventPriority.MONITOR)
-	public void onChunkUnload(ChunkUnloadEvent event) {
-		List<RegionSign> chunkSigns = signsByChunk.get(chunkToString(event.getChunk()));
-	}
-
 	/**
 	 * Update all signs connected to this region.
 	 * @return true if all signs are updated correctly, false if one or more updates failed
@@ -504,7 +517,7 @@ public class SignsFeature extends RegionFeature {
 	public boolean update() {
 		boolean result = true;
 		for(RegionSign sign : signs.values()) {
-			result = result & sign.update();
+			result &= sign.update();
 		}
 		return result;
 	}
@@ -516,7 +529,7 @@ public class SignsFeature extends RegionFeature {
 	public boolean needsPeriodicUpdate() {
 		boolean result = false;
 		for(RegionSign sign : signs.values()) {
-			result = result | sign.needsPeriodicUpdate();
+			result |= sign.needsPeriodicUpdate();
 		}
 		return result;
 	}
@@ -565,7 +578,7 @@ public class SignsFeature extends RegionFeature {
 		getRegion().setSetting(signPath + "location", Utils.locationToConfig(location));
 		getRegion().setSetting(signPath + "facing", facing != null ? facing.name() : null);
 		getRegion().setSetting(signPath + "signType", signType != null ? signType.name() : null);
-		if(profile != null && profile.length() != 0) {
+		if(profile != null && !profile.isEmpty()) {
 			getRegion().setSetting(signPath + "profile", profile);
 		}
 		// Add to the map
@@ -574,30 +587,6 @@ public class SignsFeature extends RegionFeature {
 		allSigns.put(sign.getStringLocation(), sign);
 		signsByChunk.computeIfAbsent(sign.getStringChunk(), key -> new ArrayList<>())
 				.add(sign);
-	}
-
-	/**
-	 * Checks if there is a sign from this region at the specified location.
-	 * @param location Location to check
-	 * @return true if this region has a sign at the location, otherwise false
-	 */
-	public boolean isSignOfRegion(Location location) {
-		Set<String> signs;
-		if(getRegion().getConfig().getConfigurationSection("general.signs") == null) {
-			return false;
-		}
-		signs = getRegion().getConfig().getConfigurationSection("general.signs").getKeys(false);
-		for(String sign : signs) {
-			Location signLocation = Utils.configToLocation(getRegion().getConfig().getConfigurationSection("general.signs." + sign + ".location"));
-			if(signLocation != null
-					&& signLocation.getWorld().equals(location.getWorld())
-					&& signLocation.getBlockX() == location.getBlockX()
-					&& signLocation.getBlockY() == location.getBlockY()
-					&& signLocation.getBlockZ() == location.getBlockZ()) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 }

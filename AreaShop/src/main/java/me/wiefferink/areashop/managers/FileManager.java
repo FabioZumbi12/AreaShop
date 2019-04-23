@@ -5,6 +5,8 @@ import com.google.common.io.Files;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import me.wiefferink.areashop.AreaShop;
+import me.wiefferink.areashop.events.ask.AddingRegionEvent;
+import me.wiefferink.areashop.events.ask.DeletingRegionEvent;
 import me.wiefferink.areashop.events.notify.AddedRegionEvent;
 import me.wiefferink.areashop.events.notify.DeletedRegionEvent;
 import me.wiefferink.areashop.regions.BuyRegion;
@@ -56,7 +58,7 @@ public class FileManager extends Manager {
 	private YamlConfiguration defaultConfig = null;
 	private YamlConfiguration defaultConfigFallback = null;
 	private boolean saveGroupsRequired = false;
-	private Set<String> worldRegionsRequireSaving;
+	private final Set<String> worldRegionsRequireSaving;
 
 	private HashMap<String, Integer> versions = null;
 	private String versionPath = null;
@@ -67,6 +69,7 @@ public class FileManager extends Manager {
 		BLACKLISTED("blacklisted"),
 		NOPERMISSION("nopermission"),
 		ALREADYADDED("alreadyadded"),
+		ALREADYADDEDOTHERWORLD("alreadyaddedotherworld"),
 		SUCCESS("success");
 
 		private final String value;
@@ -183,7 +186,7 @@ public class FileManager extends Manager {
 	 */
 	public RentRegion getRent(String name) {
 		GeneralRegion region = regions.get(name.toLowerCase());
-		if(region != null && region instanceof RentRegion) {
+		if(region instanceof RentRegion) {
 			return (RentRegion)region;
 		}
 		return null;
@@ -196,7 +199,7 @@ public class FileManager extends Manager {
 	 */
 	public BuyRegion getBuy(String name) {
 		GeneralRegion region = regions.get(name.toLowerCase());
-		if(region != null && region instanceof BuyRegion) {
+		if(region instanceof BuyRegion) {
 			return (BuyRegion)region;
 		}
 		return null;
@@ -287,26 +290,39 @@ public class FileManager extends Manager {
 	}
 
 	/**
-	 * Add a rent to the list without saving it to disk (useful for loading at startup).
-	 * @param rent The rental region to add
+	 * Add a region to the list and mark it as to-be-saved.
+	 * @param region Then region to add
+	 * @return true when successful, otherwise false (denied by an event listener)
 	 */
-	public void addRentNoSave(RentRegion rent) {
-		if(rent == null) {
-			AreaShop.debug("Tried adding a null rent!");
-			return;
+	public AddingRegionEvent addRegion(GeneralRegion region) {
+		AddingRegionEvent event = addRegionNoSave(region);
+		if (event.isCancelled()) {
+			return event;
 		}
-		regions.put(rent.getName().toLowerCase(), rent);
-		Bukkit.getPluginManager().callEvent(new AddedRegionEvent(rent));
+		region.saveRequired();
+		markGroupsAutoDirty();
+		return event;
 	}
 
 	/**
-	 * Add a rent to the list and mark it as to-be-saved.
-	 * @param rent Then rental region to add
+	 * Add a region to the list without saving it to disk (useful for loading at startup).
+	 * @param region The region to add
+	 * @return true when successful, otherwise false (denied by an event listener)
 	 */
-	public void addRent(RentRegion rent) {
-		addRentNoSave(rent);
-		rent.saveRequired();
-		markGroupsAutoDirty();
+	public AddingRegionEvent addRegionNoSave(GeneralRegion region) {
+		AddingRegionEvent event = new AddingRegionEvent(region);
+		if(region == null) {
+			AreaShop.debug("Tried adding a null region!");
+			event.cancel("null region");
+			return event;
+		}
+		Bukkit.getPluginManager().callEvent(event);
+		if (event.isCancelled()) {
+			return event;
+		}
+		regions.put(region.getName().toLowerCase(), region);
+		Bukkit.getPluginManager().callEvent(new AddedRegionEvent(region));
+		return event;
 	}
 
 	/**
@@ -316,29 +332,6 @@ public class FileManager extends Manager {
 		for(RegionGroup group : getGroups()) {
 			group.autoDirty();
 		}
-	}
-
-	/**
-	 * Add a buy to the list without saving it to disk (useful for loading at startup).
-	 * @param buy The buy region to add
-	 */
-	public void addBuyNoSave(BuyRegion buy) {
-		if(buy == null) {
-			AreaShop.debug("Tried adding a null buy!");
-			return;
-		}
-		regions.put(buy.getName().toLowerCase(), buy);
-		Bukkit.getPluginManager().callEvent(new AddedRegionEvent(buy));
-	}
-
-	/**
-	 * Add a buy to the list and mark it as to-be-saved.
-	 * @param buy The buy region to add
-	 */
-	public void addBuy(BuyRegion buy) {
-		addBuyNoSave(buy);
-		buy.saveRequired();
-		markGroupsAutoDirty();
 	}
 
 	/**
@@ -357,10 +350,11 @@ public class FileManager extends Manager {
 	 * Check if a player can add a certain region as rent or buy region.
 	 * @param sender The player/console that wants to add a region
 	 * @param region The WorldGuard region to add
+	 * @param world The world the ProtectedRegion is located in
 	 * @param type   The type the region should have in AreaShop
 	 * @return The result if a player would want to add this region
 	 */
-	public AddResult checkRegionAdd(CommandSender sender, ProtectedRegion region, RegionType type) {
+	public AddResult checkRegionAdd(CommandSender sender, ProtectedRegion region, World world, RegionType type) {
 		Player player = null;
 		if(sender instanceof Player) {
 			player = (Player)sender;
@@ -383,7 +377,11 @@ public class FileManager extends Manager {
 		}
 		GeneralRegion asRegion = plugin.getFileManager().getRegion(region.getId());
 		if(asRegion != null) {
-			return AddResult.ALREADYADDED;
+			if(asRegion.getWorld().equals(world)) {
+				return AddResult.ALREADYADDED;
+			} else {
+				return AddResult.ALREADYADDEDOTHERWORLD;
+			}
 		} else if(plugin.getFileManager().isBlacklisted(region.getId())) {
 			return AddResult.BLACKLISTED;
 		} else {
@@ -391,113 +389,68 @@ public class FileManager extends Manager {
 		}
 	}
 
-	/**
-	 * Remove a rent from the list.
-	 * @param rent          The region to remove
-	 * @param giveMoneyBack use true to give money back to the player if someone is currently renting this region, otherwise false
-	 * @return true if the rent has been removed, false otherwise
-	 */
-	public boolean removeRent(RentRegion rent, boolean giveMoneyBack) {
-		boolean result = false;
-		if(rent != null) {
-			rent.setDeleted();
-			if(rent.isRented()) {
-				rent.unRent(giveMoneyBack, null);
-			}
-			// Handle schematics and run commands
-			rent.handleSchematicEvent(RegionEvent.DELETED);
-			rent.runEventCommands(RegionEvent.DELETED, true);
-
-			// Delete the signs and the variable
-			if(rent.getWorld() != null) {
-				for(Location sign : rent.getSignsFeature().getSignLocations()) {
-					sign.getBlock().setType(Material.AIR);
-					AreaShop.debug("Removed sign at: " + sign.toString());
-				}
-			}
-			RegionGroup[] groups = getGroups().toArray(new RegionGroup[getGroups().size()]);
-			for(RegionGroup group : groups) {
-				group.removeMember(rent);
-			}
-			rent.resetRegionFlags();
-			regions.remove(rent.getLowerCaseName());
-			File file = new File(plugin.getDataFolder() + File.separator + AreaShop.regionsFolder + File.separator + rent.getLowerCaseName() + ".yml");
-			boolean deleted;
-			if(file.exists()) {
-				try {
-					deleted = file.delete();
-				} catch(Exception e) {
-					deleted = false;
-				}
-				if(!deleted) {
-					AreaShop.warn("File could not be deleted: " + file.toString());
-				}
-			}
-			result = true;
-
-			// Broadcast event
-			Bukkit.getPluginManager().callEvent(new DeletedRegionEvent(rent));
-
-			// Run commands
-			rent.runEventCommands(RegionEvent.DELETED, false);
-		}
-		return result;
-	}
 
 	/**
-	 * Remove a buy from the list.
-	 * @param buy           The BuyRegion to remove
-	 * @param giveMoneyBack true if money should be given back to the player, otherwise false
-	 * @return true if the buy has been removed, false otherwise
+	 * Remove a region from the list.
+	 * @param region The region to remove
+	 * @param giveMoneyBack use true to give money back to the player if someone is currently holding this region, otherwise false
+	 * @return true if the region has been removed, false otherwise
 	 */
-	public boolean removeBuy(BuyRegion buy, boolean giveMoneyBack) {
-		boolean result = false;
-		if(buy != null) {
-			buy.setDeleted();
-			if(buy.isSold()) {
-				buy.sell(giveMoneyBack, null);
-			}
-			// Handle schematics and run commands
-			buy.handleSchematicEvent(RegionEvent.DELETED);
-			buy.runEventCommands(RegionEvent.DELETED, true);
-
-			// Delete the sign and the variable
-			if(buy.getWorld() != null) {
-				for(Location sign : buy.getSignsFeature().getSignLocations()) {
-					sign.getBlock().setType(Material.AIR);
-				}
-			}
-			regions.remove(buy.getLowerCaseName());
-			buy.resetRegionFlags();
-
-			// Removing from groups
-			for(RegionGroup group : getGroups()) {
-				group.removeMember(buy);
-			}
-
-			// Deleting the file
-			File file = new File(plugin.getDataFolder() + File.separator + AreaShop.regionsFolder + File.separator + buy.getLowerCaseName() + ".yml");
-			boolean deleted;
-			if(file.exists()) {
-				try {
-					deleted = file.delete();
-				} catch(Exception e) {
-					deleted = false;
-				}
-				if(!deleted) {
-					AreaShop.warn("File could not be deleted: " + file.toString());
-				}
-			}
-
-			result = true;
-
-			// Broadcast event
-			Bukkit.getPluginManager().callEvent(new DeletedRegionEvent(buy));
-
-			// Run commands
-			buy.runEventCommands(RegionEvent.DELETED, false);
+	public DeletingRegionEvent deleteRegion(GeneralRegion region, boolean giveMoneyBack) {
+		DeletingRegionEvent event = new DeletingRegionEvent(region);
+		if(region == null) {
+			event.cancel("null region");
+			return event;
 		}
-		return result;
+
+		Bukkit.getPluginManager().callEvent(event);
+		if (event.isCancelled()) {
+			return event;
+		}
+
+		region.setDeleted();
+		if(region instanceof RentRegion && ((RentRegion)region).isRented()) {
+			((RentRegion)region).unRent(giveMoneyBack, null);
+		} else if (region instanceof BuyRegion && ((BuyRegion)region).isSold()) {
+			((BuyRegion)region).sell(giveMoneyBack, null);
+		}
+
+		// Handle schematics
+		region.handleSchematicEvent(RegionEvent.DELETED);
+
+		// Delete the signs
+		if(region.getWorld() != null) {
+			for(Location sign : region.getSignsFeature().getSignLocations()) {
+				sign.getBlock().setType(Material.AIR);
+			}
+		}
+
+		// Remove from RegionGroups
+		RegionGroup[] regionGroups = getGroups().toArray(new RegionGroup[0]);
+		for(RegionGroup group : regionGroups) {
+			group.removeMember(region);
+		}
+
+		region.resetRegionFlags();
+		regions.remove(region.getLowerCaseName());
+
+		// Remove file
+		File file = new File(plugin.getDataFolder() + File.separator + AreaShop.regionsFolder + File.separator + region.getLowerCaseName() + ".yml");
+		if(file.exists()) {
+			boolean deleted;
+			try {
+				deleted = file.delete();
+			} catch(Exception e) {
+				deleted = false;
+			}
+			if(!deleted) {
+				AreaShop.warn("File could not be deleted: " + file.toString());
+			}
+		}
+
+		// Broadcast event
+		Bukkit.getPluginManager().callEvent(new DeletedRegionEvent(region));
+		return event;
 	}
 
 	/**
@@ -661,7 +614,7 @@ public class FileManager extends Manager {
 		for(String world : worldRegionsRequireSaving) {
 			World bukkitWorld = Bukkit.getWorld(world);
 			if(bukkitWorld != null) {
-				RegionManager manager = plugin.getWorldGuard().getRegionManager(bukkitWorld);
+				RegionManager manager = plugin.getRegionManager(bukkitWorld);
 				if(manager != null) {
 					try {
 						if(plugin.getWorldGuard().getDescription().getVersion().startsWith("5.")) {
@@ -732,16 +685,14 @@ public class FileManager extends Manager {
 		File file = new File(versionPath);
 		if(file.exists()) {
 			// Load versions from the file
-			try {
-				ObjectInputStream input = new ObjectInputStream(new FileInputStream(versionPath));
-				versions = (HashMap<String, Integer>)input.readObject();
-				input.close();
+			try (ObjectInputStream input = new ObjectInputStream(new FileInputStream(versionPath))) {
+				versions = (HashMap<String, Integer>) input.readObject();
 			} catch(IOException | ClassNotFoundException | ClassCastException e) {
 				AreaShop.warn("Something went wrong reading file: " + versionPath);
 				versions = null;
 			}
 		}
-		if(versions == null || versions.size() == 0) {
+		if(versions == null || versions.isEmpty()) {
 			versions = new HashMap<>();
 			versions.put(AreaShop.versionFiles, 0);
 			this.saveVersions();
@@ -755,10 +706,8 @@ public class FileManager extends Manager {
 		if(!(new File(versionPath).exists())) {
 			AreaShop.debug("versions file created, this should happen only after installing or upgrading the plugin");
 		}
-		try {
-			ObjectOutputStream output = new ObjectOutputStream(new FileOutputStream(versionPath));
+		try (ObjectOutputStream output = new ObjectOutputStream(new FileOutputStream(versionPath))) {
 			output.writeObject(versions);
-			output.close();
 		} catch(IOException e) {
 			AreaShop.warn("File could not be saved: " + versionPath);
 		}
@@ -814,8 +763,6 @@ public class FileManager extends Manager {
 				while((read = input.read(bytes)) != -1) {
 					output.write(bytes, 0, read);
 				}
-				input.close();
-				output.close();
 				AreaShop.info("File with default region settings has been saved, should only happen on first startup");
 			} catch(IOException e) {
 				AreaShop.warn("Something went wrong saving the default region settings: " + defaultFile.getAbsolutePath());
@@ -827,7 +774,7 @@ public class FileManager extends Manager {
 				InputStreamReader normal = new InputStreamReader(plugin.getResource(AreaShop.defaultFile), Charsets.UTF_8)
 		) {
 			defaultConfig = YamlConfiguration.loadConfiguration(custom);
-			if(defaultConfig.getKeys(false).size() == 0) {
+			if(defaultConfig.getKeys(false).isEmpty()) {
 				AreaShop.warn("File 'default.yml' is empty, check for errors in the log.");
 				result = false;
 			}
@@ -868,7 +815,7 @@ public class FileManager extends Manager {
 				InputStreamReader hidden = new InputStreamReader(plugin.getResource(AreaShop.configFileHidden), Charsets.UTF_8)
 		) {
 			config = YamlConfiguration.loadConfiguration(custom);
-			if(config.getKeys(false).size() == 0) {
+			if(config.getKeys(false).isEmpty()) {
 				AreaShop.warn("File 'config.yml' is empty, check for errors in the log.");
 				result = false;
 			} else {
@@ -949,15 +896,15 @@ public class FileManager extends Manager {
 		List<GeneralRegion> noRegion = new ArrayList<>();
 		List<GeneralRegion> incorrectDuration = new ArrayList<>();
 		for(File regionFile : regionFiles) {
-			if(regionFile.exists() && regionFile.isFile()) {
+			if(regionFile.exists() && regionFile.isFile() && !regionFile.isHidden()) {
 
 				// Load the region file from disk in UTF8 mode
-				YamlConfiguration config;
+				YamlConfiguration regionConfig;
 				try(
 						InputStreamReader reader = new InputStreamReader(new FileInputStream(regionFile), Charsets.UTF_8)
 				) {
-					config = YamlConfiguration.loadConfiguration(reader);
-					if(config.getKeys(false).size() == 0) {
+					regionConfig = YamlConfiguration.loadConfiguration(reader);
+					if(regionConfig.getKeys(false).isEmpty()) {
 						AreaShop.warn("Region file '" + regionFile.getName() + "' is empty, check for errors in the log.");
 					}
 				} catch(IOException e) {
@@ -966,14 +913,14 @@ public class FileManager extends Manager {
 				}
 
 				// Construct the correct type of region
-				String type = config.getString("general.type");
+				String type = regionConfig.getString("general.type");
 				GeneralRegion region;
 				if(RegionType.RENT.getValue().equals(type)) {
-					region = new RentRegion(config);
+					region = new RentRegion(regionConfig);
 				} else if(RegionType.BUY.getValue().equals(type)) {
-					region = new BuyRegion(config);
+					region = new BuyRegion(regionConfig);
 				} else {
-					noNamePaths.add(regionFile.getPath());
+					noRegionType.add(regionFile.getPath());
 					continue;
 				}
 
@@ -989,11 +936,7 @@ public class FileManager extends Manager {
 					incorrectDuration.add(region);
 				} else {
 					added = true;
-					if(region instanceof RentRegion) {
-						addRentNoSave((RentRegion)region);
-					} else if(region instanceof BuyRegion) {
-						addBuyNoSave((BuyRegion)region);
-					}
+					addRegionNoSave(region);
 				}
 				if(!added) {
 					region.destroy();
@@ -1030,7 +973,7 @@ public class FileManager extends Manager {
 				}
 			}
 			List<String> noWorldNames = new ArrayList<>();
-			for(GeneralRegion region : noRegion) {
+			for(GeneralRegion region : toDisplay) {
 				noWorldNames.add(region.getName());
 			}
 			AreaShop.warn("World " + missingWorld + " is not loaded, the following AreaShop regions are not functional now: " + Utils.createCommaSeparatedList(noWorldNames));
@@ -1150,37 +1093,37 @@ public class FileManager extends Manager {
 						return;
 					}
 					for(HashMap<String, String> rent : rents.values()) {
-						YamlConfiguration config = new YamlConfiguration();
-						config.set("general.name", rent.get("name").toLowerCase());
-						config.set("general.type", "rent");
-						config.set("general.world", rent.get("world"));
-						config.set("general.signs.0.location.world", rent.get("world"));
-						config.set("general.signs.0.location.x", Double.parseDouble(rent.get("x")));
-						config.set("general.signs.0.location.y", Double.parseDouble(rent.get("y")));
-						config.set("general.signs.0.location.z", Double.parseDouble(rent.get("z")));
-						config.set("rent.price", Double.parseDouble(rent.get("price")));
-						config.set("rent.duration", rent.get("duration"));
+						YamlConfiguration regionConfig = new YamlConfiguration();
+						regionConfig.set("general.name", rent.get("name").toLowerCase());
+						regionConfig.set("general.type", "rent");
+						regionConfig.set("general.world", rent.get("world"));
+						regionConfig.set("general.signs.0.location.world", rent.get("world"));
+						regionConfig.set("general.signs.0.location.x", Double.parseDouble(rent.get("x")));
+						regionConfig.set("general.signs.0.location.y", Double.parseDouble(rent.get("y")));
+						regionConfig.set("general.signs.0.location.z", Double.parseDouble(rent.get("z")));
+						regionConfig.set("rent.price", Double.parseDouble(rent.get("price")));
+						regionConfig.set("rent.duration", rent.get("duration"));
 						if(rent.get("restore") != null && !rent.get("restore").equals("general")) {
-							config.set("general.enableRestore", rent.get("restore"));
+							regionConfig.set("general.enableRestore", rent.get("restore"));
 						}
 						if(rent.get("profile") != null && !rent.get("profile").equals("default")) {
-							config.set("general.schematicProfile", rent.get("profile"));
+							regionConfig.set("general.schematicProfile", rent.get("profile"));
 						}
 						if(rent.get("tpx") != null) {
-							config.set("general.teleportLocation.world", rent.get("world"));
-							config.set("general.teleportLocation.x", Double.parseDouble(rent.get("tpx")));
-							config.set("general.teleportLocation.y", Double.parseDouble(rent.get("tpy")));
-							config.set("general.teleportLocation.z", Double.parseDouble(rent.get("tpz")));
-							config.set("general.teleportLocation.yaw", rent.get("tpyaw"));
-							config.set("general.teleportLocation.pitch", rent.get("tppitch"));
+							regionConfig.set("general.teleportLocation.world", rent.get("world"));
+							regionConfig.set("general.teleportLocation.x", Double.parseDouble(rent.get("tpx")));
+							regionConfig.set("general.teleportLocation.y", Double.parseDouble(rent.get("tpy")));
+							regionConfig.set("general.teleportLocation.z", Double.parseDouble(rent.get("tpz")));
+							regionConfig.set("general.teleportLocation.yaw", rent.get("tpyaw"));
+							regionConfig.set("general.teleportLocation.pitch", rent.get("tppitch"));
 						}
 						if(rent.get("playeruuid") != null) {
-							config.set("rent.renter", rent.get("playeruuid"));
-							config.set("rent.renterName", Utils.toName(rent.get("playeruuid")));
-							config.set("rent.rentedUntil", Long.parseLong(rent.get("rented")));
+							regionConfig.set("rent.renter", rent.get("playeruuid"));
+							regionConfig.set("rent.renterName", Utils.toName(rent.get("playeruuid")));
+							regionConfig.set("rent.rentedUntil", Long.parseLong(rent.get("rented")));
 						}
 						try {
-							config.save(new File(regionsPath + File.separator + rent.get("name").toLowerCase() + ".yml"));
+							regionConfig.save(new File(regionsPath + File.separator + rent.get("name").toLowerCase() + ".yml"));
 						} catch(IOException e) {
 							AreaShop.warn("  Error: Could not save region file while converting: " + regionsPath + File.separator + rent.get("name").toLowerCase() + ".yml");
 						}
@@ -1269,35 +1212,35 @@ public class FileManager extends Manager {
 						AreaShop.warn("Could not create directory: " + regionsFile.getAbsolutePath());
 					}
 					for(HashMap<String, String> buy : buys.values()) {
-						YamlConfiguration config = new YamlConfiguration();
-						config.set("general.name", buy.get("name").toLowerCase());
-						config.set("general.type", "buy");
-						config.set("general.world", buy.get("world"));
-						config.set("general.signs.0.location.world", buy.get("world"));
-						config.set("general.signs.0.location.x", Double.parseDouble(buy.get("x")));
-						config.set("general.signs.0.location.y", Double.parseDouble(buy.get("y")));
-						config.set("general.signs.0.location.z", Double.parseDouble(buy.get("z")));
-						config.set("buy.price", Double.parseDouble(buy.get("price")));
+						YamlConfiguration regionConfig = new YamlConfiguration();
+						regionConfig.set("general.name", buy.get("name").toLowerCase());
+						regionConfig.set("general.type", "buy");
+						regionConfig.set("general.world", buy.get("world"));
+						regionConfig.set("general.signs.0.location.world", buy.get("world"));
+						regionConfig.set("general.signs.0.location.x", Double.parseDouble(buy.get("x")));
+						regionConfig.set("general.signs.0.location.y", Double.parseDouble(buy.get("y")));
+						regionConfig.set("general.signs.0.location.z", Double.parseDouble(buy.get("z")));
+						regionConfig.set("buy.price", Double.parseDouble(buy.get("price")));
 						if(buy.get("restore") != null && !buy.get("restore").equals("general")) {
-							config.set("general.enableRestore", buy.get("restore"));
+							regionConfig.set("general.enableRestore", buy.get("restore"));
 						}
 						if(buy.get("profile") != null && !buy.get("profile").equals("default")) {
-							config.set("general.schematicProfile", buy.get("profile"));
+							regionConfig.set("general.schematicProfile", buy.get("profile"));
 						}
 						if(buy.get("tpx") != null) {
-							config.set("general.teleportLocation.world", buy.get("world"));
-							config.set("general.teleportLocation.x", Double.parseDouble(buy.get("tpx")));
-							config.set("general.teleportLocation.y", Double.parseDouble(buy.get("tpy")));
-							config.set("general.teleportLocation.z", Double.parseDouble(buy.get("tpz")));
-							config.set("general.teleportLocation.yaw", buy.get("tpyaw"));
-							config.set("general.teleportLocation.pitch", buy.get("tppitch"));
+							regionConfig.set("general.teleportLocation.world", buy.get("world"));
+							regionConfig.set("general.teleportLocation.x", Double.parseDouble(buy.get("tpx")));
+							regionConfig.set("general.teleportLocation.y", Double.parseDouble(buy.get("tpy")));
+							regionConfig.set("general.teleportLocation.z", Double.parseDouble(buy.get("tpz")));
+							regionConfig.set("general.teleportLocation.yaw", buy.get("tpyaw"));
+							regionConfig.set("general.teleportLocation.pitch", buy.get("tppitch"));
 						}
 						if(buy.get("playeruuid") != null) {
-							config.set("buy.buyer", buy.get("playeruuid"));
-							config.set("buy.buyerName", Utils.toName(buy.get("playeruuid")));
+							regionConfig.set("buy.buyer", buy.get("playeruuid"));
+							regionConfig.set("buy.buyerName", Utils.toName(buy.get("playeruuid")));
 						}
 						try {
-							config.save(new File(regionsPath + File.separator + buy.get("name").toLowerCase() + ".yml"));
+							regionConfig.save(new File(regionsPath + File.separator + buy.get("name").toLowerCase() + ".yml"));
 						} catch(IOException e) {
 							AreaShop.warn("  Error: Could not save region file while converting: " + regionsPath + File.separator + buy.get("name").toLowerCase() + ".yml");
 						}
@@ -1356,7 +1299,7 @@ public class FileManager extends Manager {
 			// Update versions file to 3
 			versions.put(AreaShop.versionFiles, 3);
 			saveVersions();
-			if(getRegions().size() > 0) {
+			if(!getRegions().isEmpty()) {
 				AreaShop.info("  Added last active time to regions (v2 to v3)");
 			}
 		}

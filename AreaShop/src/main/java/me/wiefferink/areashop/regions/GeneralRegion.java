@@ -1,8 +1,5 @@
 package me.wiefferink.areashop.regions;
 
-import com.sk89q.worldedit.BlockVector;
-import com.sk89q.worldedit.BlockVector2D;
-import com.sk89q.worldguard.protection.flags.DefaultFlag;
 import com.sk89q.worldguard.protection.regions.ProtectedPolygonalRegion;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import me.wiefferink.areashop.AreaShop;
@@ -28,8 +25,8 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
 
-import javax.annotation.Nonnull;
 import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
@@ -45,7 +42,7 @@ import java.util.UUID;
 public abstract class GeneralRegion implements GeneralRegionInterface, Comparable<GeneralRegion>, ReplacementProvider {
 	static final AreaShop plugin = AreaShop.getInstance();
 
-	YamlConfiguration config;
+	final YamlConfiguration config;
 	private boolean saveRequired = false;
 	private boolean deleted = false;
 	private long volume = -1;
@@ -186,15 +183,16 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 	/**
 	 * Get a feature of this region.
 	 * @param clazz The class of the feature to get
-	 * @return The feature (either just instanciated or cached)
+	 * @param <T> The feature to get
+	 * @return The feature (either just instantiated or cached)
 	 */
-	public RegionFeature getFeature(Class<? extends RegionFeature> clazz) {
+	public <T extends RegionFeature> T getFeature(Class<T> clazz) {
 		RegionFeature result = features.get(clazz);
 		if(result == null) {
 			result = plugin.getFeatureManager().getRegionFeature(this, clazz);
 			features.put(clazz, result);
 		}
-		return result;
+		return clazz.cast(result);
 	}
 
 	/**
@@ -202,7 +200,7 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 	 * @return The FriendsFeature of this region
 	 */
 	public FriendsFeature getFriendsFeature() {
-		return (FriendsFeature)getFeature(FriendsFeature.class);
+		return getFeature(FriendsFeature.class);
 	}
 
 	/**
@@ -210,7 +208,7 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 	 * @return The SignsFeature of this region
 	 */
 	public SignsFeature getSignsFeature() {
-		return (SignsFeature)getFeature(SignsFeature.class);
+		return getFeature(SignsFeature.class);
 	}
 
 	/**
@@ -218,7 +216,7 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 	 * @return The TeleportFeature
 	 */
 	public TeleportFeature getTeleportFeature() {
-		return (TeleportFeature)getFeature(TeleportFeature.class);
+		return getFeature(TeleportFeature.class);
 	}
 
 	// ABSTRACT
@@ -243,7 +241,7 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 	 * @return 0 if the names are the same, below zero if this region is earlier in the alphabet, otherwise above zero
 	 */
 	@Override
-	public int compareTo(@Nonnull GeneralRegion o) {
+	public int compareTo(GeneralRegion o) {
 		return getName().compareTo(o.getName());
 	}
 
@@ -314,6 +312,7 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 	 * Get the name of the region.
 	 * @return The region name
 	 */
+	@Override
 	public String getName() {
 		return config.getString("general.name");
 	}
@@ -368,6 +367,7 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 	 * Get the World of the region.
 	 * @return The World where the region is located
 	 */
+	@Override
 	public World getWorld() {
 		return Bukkit.getWorld(getWorldName());
 	}
@@ -376,6 +376,7 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 	 * Get the name of the world where the region is located.
 	 * @return The name of the world of the region
 	 */
+	@Override
 	public String getWorldName() {
 		return getStringSetting("general.world");
 	}
@@ -506,47 +507,67 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 	 * Get the WorldGuard region associated with this AreaShop region.
 	 * @return The ProtectedRegion of WorldGuard or null if the region does not exist anymore
 	 */
+	@Override
 	public ProtectedRegion getRegion() {
 		if(getWorld() == null
 				|| plugin.getWorldGuard() == null
-				|| plugin.getWorldGuard().getRegionManager(getWorld()) == null
-				|| plugin.getWorldGuard().getRegionManager(getWorld()).getRegion(getName()) == null) {
+				|| plugin.getRegionManager(getWorld()) == null
+				|| plugin.getRegionManager(getWorld()).getRegion(getName()) == null) {
 			return null;
 		}
-		return plugin.getWorldGuard().getRegionManager(getWorld()).getRegion(getName());
+		return plugin.getRegionManager(getWorld()).getRegion(getName());
+	}
+
+	/**
+	 * Get the minimum corner of the region.
+	 * @return Vector
+	 */
+	public Vector getMinimumPoint() {
+		return plugin.getWorldGuardHandler().getMinimumPoint(getRegion());
+	}
+
+	/**
+	 * Get the maximum corner of the region.
+	 * @return Vector
+	 */
+	public Vector getMaximumPoint() {
+		return plugin.getWorldGuardHandler().getMaximumPoint(getRegion());
 	}
 
 	/**
 	 * Get the width of the region (x-axis).
 	 * @return The width of the region (x-axis)
 	 */
+	@Override
 	public int getWidth() {
 		if(getRegion() == null) {
 			return 0;
 		}
-		return getRegion().getMaximumPoint().getBlockX() - getRegion().getMinimumPoint().getBlockX() + 1;
+		return getMaximumPoint().getBlockX() - getMinimumPoint().getBlockX() + 1;
 	}
 
 	/**
 	 * Get the depth of the region (z-axis).
 	 * @return The depth of the region (z-axis)
 	 */
+	@Override
 	public int getDepth() {
 		if(getRegion() == null) {
 			return 0;
 		}
-		return getRegion().getMaximumPoint().getBlockZ() - getRegion().getMinimumPoint().getBlockZ() + 1;
+		return getMaximumPoint().getBlockZ() - getMinimumPoint().getBlockZ() + 1;
 	}
 
 	/**
 	 * Get the height of the region (y-axis).
 	 * @return The height of the region (y-axis)
 	 */
+	@Override
 	public int getHeight() {
 		if(getRegion() == null) {
 			return 0;
 		}
-		return getRegion().getMaximumPoint().getBlockY() - getRegion().getMinimumPoint().getBlockY() + 1;
+		return getMaximumPoint().getBlockY() - getMinimumPoint().getBlockY() + 1;
 	}
 
 	/**
@@ -742,7 +763,7 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 			return false;
 		}
 		// The path to save the schematic
-		File saveFile = new File(plugin.getFileManager().getSchematicFolder() + File.separator + fileName + AreaShop.schematicExtension);
+		File saveFile = new File(plugin.getFileManager().getSchematicFolder() + File.separator + fileName);
 		// Create parent directories
 		File parent = saveFile.getParentFile();
 		if(parent != null && !parent.exists()) {
@@ -769,11 +790,7 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 			return false;
 		}
 		// The path to save the schematic
-		File restoreFile = new File(plugin.getFileManager().getSchematicFolder() + File.separator + fileName + AreaShop.schematicExtension);
-		if(!restoreFile.exists() || !restoreFile.isFile()) {
-			AreaShop.info("Did not restore region " + getName() + ", schematic file does not exist: " + restoreFile.getAbsolutePath());
-			return false;
-		}
+		File restoreFile = new File(plugin.getFileManager().getSchematicFolder() + File.separator + fileName);
 		boolean result = plugin.getWorldEditHandler().restoreRegionBlocks(restoreFile, this);
 		if(result) {
 			AreaShop.debug("Restored schematic for region " + getName());
@@ -790,8 +807,8 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 	public void resetRegionFlags() {
 		ProtectedRegion region = getRegion();
 		if(region != null) {
-			region.setFlag(DefaultFlag.GREET_MESSAGE, null);
-			region.setFlag(DefaultFlag.FAREWELL_MESSAGE, null);
+			region.setFlag(plugin.getWorldGuardHandler().fuzzyMatchFlag("greeting"), null);
+			region.setFlag(plugin.getWorldGuardHandler().fuzzyMatchFlag("farewell"), null);
 		}
 	}
 
@@ -1258,11 +1275,11 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 	 * Class to store the result of a limits check.
 	 */
 	public class LimitResult {
-		private boolean actionAllowed;
-		private LimitType limitingFactor;
-		private int maximum;
-		private int current;
-		private String limitingGroup;
+		private final boolean actionAllowed;
+		private final LimitType limitingFactor;
+		private final int maximum;
+		private final int current;
+		private final String limitingGroup;
 
 		/**
 		 * Constructor.
@@ -1354,7 +1371,10 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 	public int hasRegionsInLimitGroup(OfflinePlayer player, String limitGroup, List<? extends GeneralRegion> regions, GeneralRegion exclude) {
 		int result = 0;
 		for(GeneralRegion region : regions) {
-			if(region.isOwner(player) && region.matchesLimitGroup(limitGroup) && (exclude == null || !exclude.getName().equals(region.getName()))) {
+			if(region.getBooleanSetting("general.countForLimits")
+					&& region.isOwner(player)
+					&& region.matchesLimitGroup(limitGroup)
+					&& (exclude == null || !exclude.getName().equals(region.getName()))) {
 				result++;
 			}
 		}
@@ -1402,12 +1422,12 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 		String save = profileSection.getString(type.getValue() + ".save");
 		String restore = profileSection.getString(type.getValue() + ".restore");
 		// Save the region if needed
-		if(save != null && save.length() != 0) {
+		if(save != null && !save.isEmpty()) {
 			save = Message.fromString(save).replacements(this).getSingle();
 			saveRegionBlocks(save);
 		}
 		// Restore the region if needed
-		if(restore != null && restore.length() != 0) {
+		if(restore != null && !restore.isEmpty()) {
 			restore = Message.fromString(restore).replacements(this).getSingle();
 			restoreRegionBlocks(restore);
 		}
@@ -1426,7 +1446,7 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 		}
 
 		for(String command : commands) {
-			if(command == null || command.length() == 0) {
+			if(command == null || command.isEmpty()) {
 				continue;
 			}
 			// It is not ideal we have to disable language replacements here, but otherwise giving language variables
@@ -1461,23 +1481,6 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 	}
 
 	/**
-	 * Run command for a certain event.
-	 * @param event  The event
-	 * @param before The 'before' or 'after' commands
-	 */
-	public void runEventCommands(RegionEvent event, boolean before) {
-		ConfigurationSection eventCommandProfileSection = getConfigurationSectionSetting("general.eventCommandProfile", "eventCommandProfiles");
-		if(eventCommandProfileSection == null) {
-			return;
-		}
-		List<String> commands = eventCommandProfileSection.getStringList(event.getValue() + "." + (before ? "before" : "after"));
-		if(commands == null || commands.isEmpty()) {
-			return;
-		}
-		runCommands(Bukkit.getConsoleSender(), commands);
-	}
-
-	/**
 	 * Get the volume of the region (number of blocks inside it).
 	 * @return Number of blocks in the region
 	 */
@@ -1498,8 +1501,8 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 		// Use own calculation for polygon regions, as WorldGuard does not implement it and returns 0
 		ProtectedRegion region = getRegion();
 		if(region instanceof ProtectedPolygonalRegion) {
-			BlockVector min = region.getMinimumPoint();
-			BlockVector max = region.getMaximumPoint();
+			Vector min = getMinimumPoint();
+			Vector max = getMaximumPoint();
 
 			// Exact, but slow algorithm
 			if(getWidth() * getDepth() < 100) {
@@ -1515,7 +1518,7 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 			}
 			// Estimate, but quick algorithm
 			else {
-				List<BlockVector2D> points = region.getPoints();
+				List<Vector> points = plugin.getWorldGuardHandler().getRegionPoints(region);
 				int numPoints = points.size();
 				if(numPoints < 3) {
 					return 0;
@@ -1530,7 +1533,7 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 					x2 = points.get(i + 1).getBlockX();
 					z2 = points.get(i + 1).getBlockZ();
 
-					area = area + ((z1 + z2) * (x1 - x2));
+					area += ((z1 + z2) * (x1 - x2));
 				}
 
 				x1 = points.get(numPoints - 1).getBlockX();
@@ -1538,7 +1541,7 @@ public abstract class GeneralRegion implements GeneralRegionInterface, Comparabl
 				x2 = points.get(0).getBlockX();
 				z2 = points.get(0).getBlockZ();
 
-				area = area + ((z1 + z2) * (x1 - x2));
+				area += ((z1 + z2) * (x1 - x2));
 				area = Math.ceil(Math.abs(area) / 2);
 				return (long)(area * getHeight());
 			}
